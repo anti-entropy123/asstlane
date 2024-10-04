@@ -44,6 +44,9 @@ fn main() {
         .iter_mut()
         .map(|(word, count)| format!("{}:{}", word, count))
         .collect();
+
+    let word_num = output_entries.len();
+
     let output = output_entries.join("\n");
     let comp_end = SystemTime::now();
 
@@ -54,6 +57,7 @@ fn main() {
         "read_time": read_end.duration_since(read_start).unwrap().as_millis(),
         "comp_time": comp_end.duration_since(read_end).unwrap().as_millis(),
         "store_time": store_end.duration_since(comp_end).unwrap().as_millis(),
+        "word_num": word_num,
     });
 
     println!("{}", resp)

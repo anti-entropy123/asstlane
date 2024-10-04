@@ -5,6 +5,7 @@ use std::{
     process::{Command, Stdio},
     sync::{Arc, RwLock},
     thread,
+    time::SystemTime,
 };
 
 use hashbrown::HashMap;
@@ -17,7 +18,7 @@ fn run_workflow(app_list: &[&str], input_datas: &[String], resps: Arc<RwLock<Vec
             let resps = Arc::clone(&resps);
             thread::Builder::new()
                 .spawn_scoped(scope, move || {
-                    let process = match Command::new(format!("target/debug/{app}"))
+                    let process = match Command::new(format!("target/release/{app}"))
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())
                         .spawn()
@@ -52,20 +53,23 @@ struct MapperResponse {
 }
 
 fn map_reduce() {
-    let run_list = ["mapper", "mapper", "mapper"];
-    let mapper_nums = run_list.len();
+    let run_list_1 = ["mapper", "mapper", "mapper"];
+    let run_list_2 = ["reducer", "reducer", "reducer"];
+    let reducer_num = run_list_2.len();
+
+    let mapper_nums = run_list_1.len();
     let input_datas = (0..mapper_nums)
         .map(|idx| {
             json!({
                 "input_part": idx,
-                "reduce_num": 4,
+                "reduce_num": reducer_num,
             })
             .to_string()
         })
         .collect::<Vec<String>>();
 
     let resps = new_resps(mapper_nums);
-    run_workflow(&run_list, &input_datas, Arc::clone(&resps));
+    run_workflow(&run_list_1, &input_datas, Arc::clone(&resps));
     // println!("{:?}", resps.write().unwrap());
     let resps = resps
         .read()
@@ -79,8 +83,6 @@ fn map_reduce() {
         })
         .collect::<Vec<_>>();
 
-    let run_list = ["reducer", "reducer", "reducer", "reducer"];
-    let reducer_num = run_list.len();
     let mut input_datas: Vec<String> = Vec::new();
     for reducer_id in 0..reducer_num {
         let mut input_item: Vec<String> = Vec::new();
@@ -100,12 +102,17 @@ fn map_reduce() {
 
     // println!("{:?}", input_datas);
     let resps = new_resps(reducer_num);
-    run_workflow(&run_list, &input_datas, Arc::clone(&resps));
+    run_workflow(&run_list_2, &input_datas, Arc::clone(&resps));
     println!("{:?}", resps.write().unwrap());
 }
 
 fn main() {
+    let start = SystemTime::now();
     map_reduce();
+    println!(
+        "cost time: {:?}",
+        SystemTime::now().duration_since(start).unwrap()
+    )
 }
 
 fn _add_array() {
