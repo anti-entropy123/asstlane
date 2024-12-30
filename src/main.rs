@@ -5,7 +5,7 @@ use std::{
     process::{Command, Stdio},
     sync::{Arc, RwLock},
     thread,
-    time::SystemTime,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use hashbrown::HashMap;
@@ -106,9 +106,86 @@ fn map_reduce() {
     println!("{:?}", resps.write().unwrap());
 }
 
+fn trans_data_one_thread() {
+    const DATA_SIZE: usize = 1024 * 4 / 8;
+    static mut TRANS_START_TIME: SystemTime = UNIX_EPOCH;
+    static mut ACCESS_START_TIME: SystemTime = UNIX_EPOCH;
+    static mut DUR_TRANS: u128 = 0;
+    static mut DUR_ACCESS: u128 = 0;
+    static mut DUR_PHASE3: u128 = 0;
+
+    fn trans() -> Vec<u64> {
+        unsafe {
+            let mut data: Vec<u64> = vec![0u64; DATA_SIZE];
+            TRANS_START_TIME = SystemTime::now();
+            data
+        }
+    }
+
+    fn access(generated_array: Arc<RwLock<Vec<u64>>>) {
+        unsafe {
+            DUR_PHASE3 = SystemTime::now()
+                .duration_since(ACCESS_START_TIME)
+                .unwrap()
+                .as_nanos();
+            // let mut data = generated_array.lock().unwrap();
+            // for i in 0..data.len() {
+            //     let _ = core::ptr::read_volatile(&data[i]) as *const u64;
+            // }
+            // DUR_ACCESS = SystemTime::now().duration_since(ACCESS_START_TIME).unwrap().as_micros();
+            if let Ok(ref mut data) = generated_array.read() {
+                let data: &[u64] = data.as_ref();
+                for i in 0..data.len() {
+                    let _ = core::ptr::read_volatile(&data[i]) as *const u64;
+                }
+                // 计算持续时间
+                DUR_ACCESS = SystemTime::now()
+                    .duration_since(ACCESS_START_TIME)
+                    .unwrap()
+                    .as_nanos();
+            }
+        }
+    }
+
+    let generated_array = Arc::new(RwLock::new(Vec::new()));
+    let generated_array_clone = Arc::clone(&generated_array);
+    // 启动 trans 线程
+    let trans_handle = thread::spawn(move || {
+        let result = trans();
+        unsafe {
+            DUR_TRANS = SystemTime::now()
+                .duration_since(TRANS_START_TIME)
+                .unwrap()
+                .as_nanos();
+        }
+        let mut array = generated_array_clone.write().unwrap();
+        *array = result; // 将 trans 的结果存储到 Vec 中
+    });
+    trans_handle.join().expect("Trans thread panicked");
+    let generated_array_clone2 = Arc::clone(&generated_array);
+    // 启动 access 线程，传入生成的字符串
+    let access_handle = thread::spawn(move || {
+        unsafe {
+            ACCESS_START_TIME = SystemTime::now();
+        }
+        access(generated_array_clone2);
+    });
+    access_handle.join().expect("Trans thread panicked");
+
+    // 打印 total_dur
+    unsafe {
+        println!("trans_dur: {}", DUR_TRANS);
+        println!("access_dur: {}", DUR_ACCESS);
+        println!("phase3: {}", DUR_PHASE3);
+        println!("phase34: {}", DUR_ACCESS);
+        println!("total_dur: {}", DUR_ACCESS);
+    }
+}
+
 fn main() {
     let start = SystemTime::now();
-    map_reduce();
+    // map_reduce();
+    trans_data_one_thread();
     println!(
         "cost time: {:?}",
         SystemTime::now().duration_since(start).unwrap()
